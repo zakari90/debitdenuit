@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Image from 'next/image';
 
 type Photo = {
   timestamp: number;
@@ -46,16 +47,23 @@ const getSessions = async (): Promise<PhotoSession[]> => {
   });
 };
 
-// Save a session to IndexedDB
 const saveSession = async (session: PhotoSession): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(session);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
+  try {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(session);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+      
+      transaction.oncomplete = () => db.close();
+    });
+  } catch (error) {
+    console.error('Error saving session:', error);
+    throw new Error('فشل في حفظ الجلسة');
+  }
 };
 
 // Delete a session from IndexedDB
@@ -94,7 +102,6 @@ export default function PhotoSessionManager() {
   const [intervalId, setIntervalId] = useState<NodeJS.Timer | null>(null); // Store interval ID for cancellation
   const [selectedCamera, setSelectedCamera] = useState<string | null>(null); // New state to track selected camera
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]); // State to store available video devices
-
   useEffect(() => {
     console.log("-------------------------------------");
     console.log("useEffect");
@@ -102,7 +109,7 @@ export default function PhotoSessionManager() {
     
     getSessions().then(setSessions).catch(console.error);
     getCameraStream(); // Request camera access on component mount
-
+    chooseCamera()
     return () => {
       // Cleanup: stop video stream when component unmounts
       if (videoRef.current?.srcObject) {
@@ -116,44 +123,6 @@ export default function PhotoSessionManager() {
     };
   }, [intervalId, selectedCamera]);
 
-  // const getCameraStream = async () => {
-  //   console.log("-------------------------------------");
-  //   console.log("getCameraStream");
-    
-  //   console.log("-------------------------------------");
-  //   try {
-  //   // Get available video devices (cameras)
-  //   const devices = await navigator.mediaDevices.enumerateDevices();
-  //   const videoDevices = devices.filter(device => device.kind === "videoinput");
-    
-  //   if (videoDevices.length > 0) {
-  //     setVideoDevices(videoDevices); // Set available video devices
-      
-  //     const defaultCamera = videoDevices.find(device => device.label.includes('back')) || videoDevices[0];
-      
-  //     if (defaultCamera) {
-  //       setSelectedCamera(defaultCamera.deviceId); // Set default camera
-  //       const stream = await navigator.mediaDevices.getUserMedia({
-  //         video: { deviceId: { exact: defaultCamera.deviceId } }
-  //       });
-  //       videoRef.current!.srcObject = stream;
-  //       setHasCameraPermission(true);
-  //     }
-  //   } else {
-  //     throw new Error('No camera devices found');
-  //   }
-
-  //   } catch (err) {
-  //     console.error("Error accessing camera: ", err);
-      
-  //     if (err.name === 'NotReadableError') {
-  //       alert("الكاميرا قيد الاستخدام في مكان آخر. حاول إغلاق أي تطبيقات أو نوافذ أخرى تستخدم الكاميرا.");
-  //     } else {
-  //       setHasCameraPermission(false);
-  //       alert("لم نتمكن من الوصول إلى الكاميرا. يرجى التأكد من السماح بالكاميرا.");
-  //     }
-  //   }
-  // };
   const getCameraStream = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -170,6 +139,36 @@ export default function PhotoSessionManager() {
       setHasCameraPermission(false);
     }
   };
+  const chooseCamera = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === "videoinput");
+      
+      if (videoDevices.length > 0) {
+        setVideoDevices(videoDevices);
+        const defaultCamera = videoDevices.find(device => 
+          device.label.toLowerCase().includes('back')) || videoDevices[0];
+        
+        if (defaultCamera) {
+          setSelectedCamera(defaultCamera.deviceId);
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: defaultCamera.deviceId } }
+          });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+          setHasCameraPermission(true);
+        }
+      } else {
+        throw new Error('لم يتم العثور على كاميرا');
+      }
+    } catch (err) {
+      console.error("Error accessing camera: ", err);
+      setHasCameraPermission(false);
+      alert("فشل في الوصول إلى الكاميرا. يرجى التحقق من الأذونات.");
+    }
+  };
+ 
   const switchCamera = async (deviceId: string) => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
@@ -220,14 +219,13 @@ export default function PhotoSessionManager() {
     setSessions(updatedSessions);
 
 
-    startTakingPhotos(start, end, interval, sessionName);
+    startTakingPhotos(end, interval);
 
     setIsLoading(false);
   };
 
-  const startTakingPhotos = (start: number, end: number, interval: number, sessionName: string) => {
+  const startTakingPhotos = ( end: number, interval: number) => {
     console.log("--------------------------------");
-    console.log(start);
     
     setSessionInProgress(true); 
     const id = setInterval(() => {
@@ -248,28 +246,6 @@ export default function PhotoSessionManager() {
     setIntervalId(id); 
   };
 
-  // const captureImage = async (sessionName: string) => {
-    
-  //   const video = document.querySelector('video') as HTMLVideoElement;
-  //   const canvas = document.createElement('canvas');
-  //   const context = canvas.getContext('2d');
-
-  //   if (context && video) {
-  //     canvas.width = video.videoWidth;
-  //     canvas.height = video.videoHeight;
-  //     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-  //     const imageData = canvas.toDataURL('image/jpeg');
-
-  //     const sessions = await getSessions();
-  //     const sessionIndex = sessions.findIndex((session) => session.name === sessionName);
-
-  //     if (sessionIndex !== -1) {
-  //       sessions[sessionIndex].photos.push({ timestamp: Date.now(), imageData });
-  //       await saveSession(sessions[sessionIndex]);
-  //       console.log('تم التقاط الصورة وحفظها في الجلسة:', sessionName);
-  //     }
-  //   }
-  // };
 
   const captureImage = async () => {
     const video = document.querySelector('video') as HTMLVideoElement;
@@ -474,7 +450,9 @@ export default function PhotoSessionManager() {
                   ) : (
                     sessions.find((session) => session.name === selectedSession)?.photos.map((photo, photoIndex) => (
                       <div key={photoIndex} className="space-y-2">
-                        <img
+                        <Image
+                        width={200}
+                        height={200}
                           src={photo.imageData}
                           alt={`تم التقاط الصورة في ${new Date(photo.timestamp).toLocaleString()}`}
                           className="w-full rounded-md"
