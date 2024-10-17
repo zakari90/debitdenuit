@@ -48,6 +48,8 @@ const getSessions = async (): Promise<PhotoSession[]> => {
 };
 
 const saveSession = async (session: PhotoSession): Promise<void> => {
+  console.log("--------------------------------");
+
   try {
     const db = await initDB();
     return new Promise((resolve, reject) => {
@@ -208,9 +210,8 @@ export default function PhotoSessionManager() {
       return;
     }
 
-    setIsLoading(true); // Start loading when form is submitted
+    setIsLoading(true); 
 
-    // Save the new session
     const newSession: PhotoSession = { name: sessionName, photos: [] };
     await saveSession(newSession);
     const updatedSessions = await getSessions();
