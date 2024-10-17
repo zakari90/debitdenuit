@@ -242,7 +242,7 @@ export default function PhotoSessionManager() {
         alert('تمت عملية التقاط الصور!');
         return;
       }
-      captureImage();
+      captureImage(sessionName);
     }, interval);
 
     setIntervalId(id); 
@@ -293,26 +293,14 @@ export default function PhotoSessionManager() {
     }
   };
   
-  const handleStop = async () => {
+  const handleStop = () => {
     if (intervalId) {
-      setIntervalId(null); // Reset interval ID
+      setIntervalId(null)
     }
-  
-    // Save the current session if there are photos
-    if (selectedSession) {
-      const sessions = await getSessions();
-      const sessionIndex = sessions.findIndex((session) => session.name === selectedSession);
-  
-      if (sessionIndex !== -1) {
-        await saveSession(sessions[sessionIndex]); // Save session to IndexedDB
-        alert('تم حفظ الجلسة.'); // Notify user
-      }
-    }
-  
-    setSessionInProgress(false); // Mark the session as stopped
+    setSessionInProgress(false); // Mark the session as canceled
     setTimeLeft(null); // Reset countdown
+    alert('تم ');
   };
-    
   const handleCancel = () => {
     console.log("-------------------------------------");
     console.log("handleCancel");
@@ -427,8 +415,8 @@ export default function PhotoSessionManager() {
                       الجلسة بدأت! الوقت المتبقي: {timeLeft !== null ? `${Math.floor(timeLeft / 60)} دقيقة و ${timeLeft % 60} ثانية` : "جاري العد..."}
                     </p>
                     <Button onClick={handleCancel} className="mt-2 text-red-600">إلغاء الجلسة</Button>
-                    <Button onClick={handleStop} className="mt-2 text-red-600">إيقاف الجلسة</Button>
-                    </div>
+                    <Button onClick={handleStop} className="mt-2 text-red-600">إلغاء الجلسة</Button>
+                  </div>
                 )}
 
                 <div id="video-container" className="w-full h-52 m-2">
@@ -497,3 +485,34 @@ export default function PhotoSessionManager() {
 
 
 
+const useCamera = () => {
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
+
+  const getCameraStream = async (deviceId: string) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+      });
+      return stream;
+    } catch (err) {
+      console.error("Error accessing camera: ", err);
+      setHasPermission(false);
+    }
+  };
+
+  useEffect(() => {
+    const fetchDevices = async () => {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      setVideoDevices(videoDevices);
+      if (videoDevices.length > 0) {
+        setSelectedCamera(videoDevices[0].deviceId);
+      }
+    };
+    fetchDevices();
+  }, []);
+
+  return { hasPermission, videoDevices, selectedCamera, getCameraStream, setSelectedCamera };
+};
