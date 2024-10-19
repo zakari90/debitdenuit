@@ -48,8 +48,6 @@ const getSessions = async (): Promise<PhotoSession[]> => {
 };
 
 const saveSession = async (session: PhotoSession): Promise<void> => {
-  console.log("--------------------------------");
-
   try {
     const db = await initDB();
     return new Promise((resolve, reject) => {
@@ -102,88 +100,93 @@ export default function PhotoSessionManager() {
   const [sessionInProgress, setSessionInProgress] = useState<boolean>(false); // New state for session progress
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // New state for countdown
   const [intervalId, setIntervalId] = useState<NodeJS.Timer | null>(null); // Store interval ID for cancellation
-  // const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
-  // const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]); 
-  useEffect(() => {
-    console.log("-------------------------------------");
-    console.log("useEffect");
-    console.log("-------------------------------------");
-    getSessions().then(setSessions).catch(console.error);
-    getCameraStream(); 
-    // chooseCamera()
-    return () => {
-      if (videoRef.current?.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-      }
-      if (intervalId) {
-        setIntervalId(null)
-      }
-    };
-  }, [intervalId]);
+  const [selectedCamera, setSelectedCamera] = useState<string | null>(null); // New state to track selected camera
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]); // State to store available video devices
 
-  const getCameraStream = async () => {
+
+  const requestCameraPermission = async () => {
     try {
+      // Request camera permission
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
       });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+  
+      // If successful, return the stream
+      return stream;
+    } catch (err) {
+      console.error("Error accessing camera: ", err);
+      return null;
+    }
+  };
+  
+  const chooseCamera = async () => {
+    try {
+      // Get all media devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === "videoinput");
+  
+      if (videoDevices.length === 0) {
+        throw new Error('لم يتم العثور على كاميرا'); // "No camera found"
       }
-
-      setHasCameraPermission(true);
+  
+      setVideoDevices(videoDevices);
+  
+      const defaultCamera = videoDevices.find(device => 
+        device.label.toLowerCase().includes('back')) || videoDevices[0];
+  
+      if (defaultCamera) {
+        // Set the selected camera device ID
+        setSelectedCamera(defaultCamera.deviceId);
+  
+        // Create a new stream with the selected camera
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: defaultCamera.deviceId } }
+        });
+  
+        // Set the video element source if it exists
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+        }
+  
+        // Update the state for camera permission
+        setHasCameraPermission(true);
+      } else {
+        throw new Error('No suitable camera found.');
+      }
     } catch (err) {
       console.error("Error accessing camera: ", err);
       setHasCameraPermission(false);
+      alert("فشل في الوصول إلى الكاميرا. يرجى التحقق من الأذونات."); // "Failed to access the camera. Please check permissions."
     }
   };
-  // const chooseCamera = async () => {
-  //   try {
-  //     const devices = await navigator.mediaDevices.enumerateDevices();
-  //     const videoDevices = devices.filter(device => device.kind === "videoinput");
-      
-  //     if (videoDevices.length > 0) {
-  //       setVideoDevices(videoDevices);
-  //       const defaultCamera = videoDevices.find(device => 
-  //         device.label.toLowerCase().includes('back')) || videoDevices[0];
-        
-  //       if (defaultCamera) {
-  //         setSelectedCamera(defaultCamera.deviceId);
-  //         const stream = await navigator.mediaDevices.getUserMedia({
-  //           video: { deviceId: { exact: defaultCamera.deviceId } }
-  //         });
-  //         if (videoRef.current) {
-  //           videoRef.current.srcObject = stream;
-  //         }
-  //         setHasCameraPermission(true);
-  //       }
-  //     } else {
-  //       throw new Error('لم يتم العثور على كاميرا');
-  //     }
-  //   } catch (err) {
-  //     console.error("Error accessing camera: ", err);
-  //     setHasCameraPermission(false);
-  //     alert("فشل في الوصول إلى الكاميرا. يرجى التحقق من الأذونات.");
-  //   }
-  // };
- 
-  // const switchCamera = async (deviceId: string) => {
-  //   if (videoRef.current?.srcObject) {
-  //     const stream = videoRef.current.srcObject as MediaStream;
-  //     stream.getTracks().forEach(track => track.stop()); // Stop current camera
+  
+  const initCamera = async () => {
+    // Step 1: Request camera permission
+    const stream = await requestCameraPermission();
+    
+    if (stream) {
+      // Step 2: Choose the camera (front, back, etc.)
+      chooseCamera(stream);
+    } else {
+      alert("فشل في الوصول إلى الكاميرا. يرجى التحقق من الأذونات."); // "Failed to access the camera. Please check permissions."
+    }
+  };  
 
-  //     try {
-  //       const newStream = await navigator.mediaDevices.getUserMedia({
-  //         video: { deviceId: { exact: deviceId } }
-  //       });
-  //       videoRef.current!.srcObject = newStream; // Switch to selected camera
-  //     } catch (err) {
-  //       console.error("Error switching camera: ", err);
-  //     }
-  //   }
-  // };
+  const switchCamera = async (deviceId: string) => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop()); // Stop current camera
 
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: deviceId } }
+        });
+        videoRef.current!.srcObject = newStream; // Switch to selected camera
+      } catch (err) {
+        console.error("Error switching camera: ", err);
+      }
+    }
+  };
   const handleSubmit = async (e: FormEvent) => {
     console.log("-------------------------------------");
     console.log("handleSubmit");
@@ -210,8 +213,9 @@ export default function PhotoSessionManager() {
       return;
     }
 
-    setIsLoading(true); 
+    setIsLoading(true); // Start loading when form is submitted
 
+    // Save the new session
     const newSession: PhotoSession = { name: sessionName, photos: [] };
     await saveSession(newSession);
     const updatedSessions = await getSessions();
@@ -244,6 +248,7 @@ export default function PhotoSessionManager() {
 
     setIntervalId(id); 
   };
+
 
   const captureImage = async () => {
     const video = document.querySelector('video') as HTMLVideoElement;
@@ -314,6 +319,22 @@ export default function PhotoSessionManager() {
     }
   };
 
+
+  useEffect(() => {
+    getSessions().then(setSessions).catch(console.error);
+    initCamera()
+    return () => {
+      // Cleanup: stop video stream when component unmounts
+      if (videoRef.current?.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+      // Clear the interval if component is unmounted while session is in progress
+      if (intervalId) {
+        setIntervalId(null)
+      }
+    };
+  }, [intervalId, selectedCamera]);
   return (
     <Card className="w-[400px] text-right">
       <CardHeader>
@@ -378,7 +399,7 @@ export default function PhotoSessionManager() {
                       disabled={sessionInProgress}
                     />
                   </div>
-                  {/* <div className="mb-4">
+                  <div className="mb-4">
             <Label>اختر الكاميرا</Label>
             <select onChange={(e) => {
               setSelectedCamera(e.target.value);
@@ -391,7 +412,7 @@ export default function PhotoSessionManager() {
                 </option>
               ))}
             </select>
-          </div> */}
+          </div>
                   <Button type="submit" disabled={isLoading || sessionInProgress}>بدء التصوير</Button>
                 </form>
 
