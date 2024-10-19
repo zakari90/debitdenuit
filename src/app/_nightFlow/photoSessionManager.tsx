@@ -91,27 +91,24 @@ export default function PhotoSessionManager() {
   const [startTime, setStartTime] = useState<string>('');  
   const [endTime, setEndTime] = useState<string>('');  
   const [interval, setIntervalValue] = useState<number>(1000); 
-  const [sessionName, setSessionName] = useState<string>(defaulSessiontName);  
+  const [sessionName, setSessionName] = useState<string>("");  
   const [sessions, setSessions] = useState<PhotoSession[]>([]);  
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);  
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false); 
-  const [sessionInProgress, setSessionInProgress] = useState<boolean>(false); // New state for session progress
-  const [timeLeft, setTimeLeft] = useState<number | null>(null); // New state for countdown
-  const [intervalId, setIntervalId] = useState<NodeJS.Timer | null>(null); // Store interval ID for cancellation
-  const [selectedCamera, setSelectedCamera] = useState<string | null>(null); // New state to track selected camera
-  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]); // State to store available video devices
+  const [sessionInProgress, setSessionInProgress] = useState<boolean>(false); 
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [intervalId, setIntervalId] = useState<NodeJS.Timer | null>(null); 
+  const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
 
 
   const requestCameraPermission = async () => {
     try {
-      // Request camera permission
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
       });
-  
-      // If successful, return the stream
       return stream;
     } catch (err) {
       console.error("Error accessing camera: ", err);
@@ -200,10 +197,7 @@ export default function PhotoSessionManager() {
     await saveSession(newSession);
     const updatedSessions = await getSessions();
     setSessions(updatedSessions);
-
-
     startTakingPhotos(end, interval);
-
     setIsLoading(false);
   };
 
@@ -226,74 +220,77 @@ export default function PhotoSessionManager() {
 
     setIntervalId(id); 
   };
-
-
   const captureImage = async () => {
-    const video = document.querySelector('video') as HTMLVideoElement;
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
+    try {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
   
-    if (context && video && selectedSession) {
+      if (!video || !context) {
+        throw new Error('لم يتم العثور على الفيديو أو السياق');
+      }
+  
+      console.log('تم التقاط الصورة وحفظها في الجلسة:', selectedSession);
+  
+      // Set canvas dimensions to match video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+  
+      // Draw the video frame on the canvas
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  
+      // Convert the canvas to a base64 image
       const imageData = canvas.toDataURL('image/jpeg');
-  
+      
+      // Fetch the sessions
       const sessions = await getSessions();
-      const sessionIndex = sessions.findIndex((session) => session.name === selectedSession);
   
-      if (sessionIndex !== -1) {
-        sessions[sessionIndex].photos.push({ timestamp: Date.now(), imageData });
-        await saveSession(sessions[sessionIndex]);
-        console.log('تم التقاط الصورة وحفظها في الجلسة:', selectedSession);
-      }
+      
+      // Try to find the session
+      let sessionIndex = sessions.findIndex((session) => session.name === selectedSession);
+        const newSession = {
+          name: defaulSessiontName,
+          photos: [{ timestamp: Date.now(), imageData }],
+        };
+        sessions.push(newSession);  
+        sessionIndex = sessions.length - 1;  
+        console.log('تم إنشاء جلسة جديدة وحفظ الصورة في الجلسة:', defaulSessiontName);
+        console.log("***************************" + sessionIndex);
+        
+      await saveSession(sessions[sessionIndex]);
+    } catch (error) {
+      console.error('حدث خطأ أثناء التقاط الصورة:', error);
     }
   };
   
+  
   const handleStop = async () => {
     if (intervalId) {
-      setIntervalId(null); // Reset interval ID
+      setIntervalId(null); 
     }
   
-    // Save the current session if there are photos
     if (selectedSession) {
       const sessions = await getSessions();
       const sessionIndex = sessions.findIndex((session) => session.name === selectedSession);
   
       if (sessionIndex !== -1) {
-        await saveSession(sessions[sessionIndex]); // Save session to IndexedDB
-        alert('تم حفظ الجلسة.'); // Notify user
+        await saveSession(sessions[sessionIndex]); 
+        alert('تم انهاء الجلسة.');
       }
     }
   
-    setSessionInProgress(false); // Mark the session as stopped
-    setTimeLeft(null); // Reset countdown
+    setSessionInProgress(false); 
+    setTimeLeft(null);
   };
     
-  const handleCancel = () => {
-    console.log("-------------------------------------");
-    console.log("handleCancel");
-    console.log("-------------------------------------");
-    
-    if (intervalId) {
-      setIntervalId(null)
-    }
-    setSessionInProgress(false); // Mark the session as canceled
-    setTimeLeft(null); // Reset countdown
-    alert('تم إلغاء الجلسة.');
-  };
 
   const handleDeleteSession = async (sessionName: string) => {
-    console.log("-------------------------------------");
-    console.log("handleDeleteSession");
-    console.log("-------------------------------------");
-    
     const confirmed = window.confirm(`هل أنت متأكد أنك تريد حذف الجلسة: ${sessionName}?`);
     if (confirmed) {
       await deleteSession(sessionName);
       const updatedSessions = await getSessions();
       setSessions(updatedSessions);
-      setSelectedSession(null);  // Clear selected session after deletion
+      setSelectedSession(null);
     }
   };
 
@@ -302,17 +299,16 @@ export default function PhotoSessionManager() {
     getSessions().then(setSessions).catch(console.error);
     initCamera()
     return () => {
-      // Cleanup: stop video stream when component unmounts
       if (videoRef.current?.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
       }
-      // Clear the interval if component is unmounted while session is in progress
       if (intervalId) {
         setIntervalId(null)
       }
     };
   }, [intervalId, selectedCamera]);
+
   return (
     <Card className="w-[400px] text-right">
       <CardHeader>
@@ -324,7 +320,6 @@ export default function PhotoSessionManager() {
             <TabsTrigger value="new-session">جديد</TabsTrigger>
             <TabsTrigger value="existing-sessions">السجل</TabsTrigger>
           </TabsList>
-
           <TabsContent value="new-session">
             {hasCameraPermission === null && <p>جارٍ تحميل الكاميرا...</p>}
             {hasCameraPermission === false && <p>تم رفض الإذن أو حدث خطأ</p>}
@@ -399,7 +394,7 @@ export default function PhotoSessionManager() {
                     <p className="text-lg font-semibold">
                       الجلسة بدأت! الوقت المتبقي: {timeLeft !== null ? `${Math.floor(timeLeft / 60)} دقيقة و ${timeLeft % 60} ثانية` : "جاري العد..."}
                     </p>
-                    <Button onClick={handleCancel} className="mt-2 text-red-600">إلغاء الجلسة</Button>
+                    {/* <Button onClick={handleCancel} className="mt-2 text-red-600">إلغاء الجلسة</Button> */}
                     <Button onClick={handleStop} className="mt-2 text-red-600">إيقاف الجلسة</Button>
                     </div>
                 )}

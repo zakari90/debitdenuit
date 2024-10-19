@@ -6,6 +6,7 @@ export default function Home() {
   return (
     <>
 <div dir="rtl" className="flex flex-col items-center justify-center min-h-screen m-auto">
+  {/* <WebcamImage/> */}
   <div className="mb-4 text-center">
   <div className="text-base md:text-lg">
   {/* {currentDate} */}
