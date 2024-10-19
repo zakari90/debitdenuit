@@ -121,34 +121,25 @@ export default function PhotoSessionManager() {
   
   const chooseCamera = async () => {
     try {
-      // Get all media devices
+
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === "videoinput");
   
       if (videoDevices.length === 0) {
-        throw new Error('لم يتم العثور على كاميرا'); // "No camera found"
+        throw new Error('لم يتم العثور على كاميرا');
       }
-  
       setVideoDevices(videoDevices);
-  
       const defaultCamera = videoDevices.find(device => 
         device.label.toLowerCase().includes('back')) || videoDevices[0];
   
       if (defaultCamera) {
-        // Set the selected camera device ID
         setSelectedCamera(defaultCamera.deviceId);
-  
-        // Create a new stream with the selected camera
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: defaultCamera.deviceId } }
         });
-  
-        // Set the video element source if it exists
         if (videoRef.current) {
           videoRef.current.srcObject = newStream;
         }
-  
-        // Update the state for camera permission
         setHasCameraPermission(true);
       } else {
         throw new Error('No suitable camera found.');
@@ -161,41 +152,32 @@ export default function PhotoSessionManager() {
   };
   
   const initCamera = async () => {
-    // Step 1: Request camera permission
     const stream = await requestCameraPermission();
     
     if (stream) {
-      // Step 2: Choose the camera (front, back, etc.)
-      chooseCamera(stream);
+      chooseCamera();
     } else {
-      alert("فشل في الوصول إلى الكاميرا. يرجى التحقق من الأذونات."); // "Failed to access the camera. Please check permissions."
+      alert("فشل في الوصول إلى الكاميرا. يرجى التحقق من الأذونات.");
     }
   };  
 
   const switchCamera = async (deviceId: string) => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop()); // Stop current camera
-
+      stream.getTracks().forEach(track => track.stop()); 
       try {
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: deviceId } }
         });
-        videoRef.current!.srcObject = newStream; // Switch to selected camera
+        videoRef.current!.srcObject = newStream; 
       } catch (err) {
         console.error("Error switching camera: ", err);
       }
     }
   };
   const handleSubmit = async (e: FormEvent) => {
-    console.log("-------------------------------------");
-    console.log("handleSubmit");
-    console.log("-------------------------------------");
-    
     e.preventDefault();
 
-    
-    // Validate form fields
     if (!startTime) {
       alert('يرجى ملء حقل وقت البدء.');
       return;
@@ -213,9 +195,7 @@ export default function PhotoSessionManager() {
       return;
     }
 
-    setIsLoading(true); // Start loading when form is submitted
-
-    // Save the new session
+    setIsLoading(true); 
     const newSession: PhotoSession = { name: sessionName, photos: [] };
     await saveSession(newSession);
     const updatedSessions = await getSessions();
@@ -228,8 +208,6 @@ export default function PhotoSessionManager() {
   };
 
   const startTakingPhotos = ( end: number, interval: number) => {
-    console.log("--------------------------------");
-    
     setSessionInProgress(true); 
     const id = setInterval(() => {
       const now = Date.now();
