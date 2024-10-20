@@ -1,6 +1,6 @@
 "use client"
 import Clock from 'react-live-clock';
-import PhotoSessionManager from "./_nightFlow/photoSessionManager";
+import PhotoSessionManager from "./_nightFlow/photoSessionManager copy";
 export default function Home() {
 
   return (
