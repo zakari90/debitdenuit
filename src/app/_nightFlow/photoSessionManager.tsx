@@ -7,67 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from 'next/image';
 import { FormEvent, useCallback, useRef, useState, useEffect } from "react";
+import { deleteSession, getSessions, Photo, PhotoSession, saveSession } from "./db";
 
-type Photo = {
-  timestamp: number;
-  imageData: string;
-};
 
-export type PhotoSession = {
-  name: string;
-  photos: Photo[];
-};
-
-const DB_NAME = 'PhotoSessionDB';
-const STORE_NAME = 'sessions';
-const DB_VERSION = 1;
-
-// Initialize IndexedDB
-const initDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      db.createObjectStore(STORE_NAME, { keyPath: 'name' });
-    };
-  });
-};
-
-// Get all sessions from IndexedDB
-const getSessions = async (): Promise<PhotoSession[]> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
-};
-
-const saveSession = async (session: PhotoSession): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(session);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
-};
-
-const deleteSession = async (sessionName: string): Promise<void> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.delete(sessionName);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
-};
 
 function PhotoSessionManager() {
   const webcamRef = useRef<Webcam>(null);
@@ -75,7 +17,7 @@ function PhotoSessionManager() {
   const defaultSessionName = "الصبيب الليلي " + new Date().toLocaleString('ar-ma');
   const [startTime, setStartTime] = useState<string>('');  
   const [endTime, setEndTime] = useState<string>('');  
-  const [interval, setIntervalValue] = useState<number>(1000); 
+  const [interval, setIntervalValue] = useState<number>(10); 
   const [sessionName, setSessionName] = useState<string>(defaultSessionName);  
   const [sessions, setSessions] = useState<PhotoSession[]>([]);  
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
@@ -84,8 +26,11 @@ function PhotoSessionManager() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [intervalId, setIntervalId] = useState<NodeJS.Timer | null>(null); 
   const [cameraMode, setCameraMode] = useState<"user" | "environment">("environment");
+  const [isWebcamActive, setIsWebcamActive] = useState<boolean>(false); // Used for webcam activation
 
   const videoConstraints = {
+    width: 280,
+    height: 280,
     facingMode: cameraMode,  
   };
   const capture = useCallback(() => {
@@ -111,16 +56,22 @@ function PhotoSessionManager() {
       alert('وقت الانتهاء يجب أن يكون بعد وقت البدء.');
       return;
     }
-
+    
     setIsLoading(true);
+    
     const newSession: PhotoSession = { name: sessionName, photos: [] };
     await saveSession(newSession);
+
     startTakingPhotos(end, interval);
+    
     setIsLoading(false);
   };
 
   const startTakingPhotos = (end: number, interval: number) => {
+
     setSessionInProgress(true);
+
+    setIsWebcamActive(true)
     const id = setInterval(async () => {
       const now = Date.now();
       const remainingTime = Math.max(0, end - now);
@@ -130,9 +81,11 @@ function PhotoSessionManager() {
         clearInterval(id);
         setSessionInProgress(false);
         setTimeLeft(null);
+        setIsWebcamActive(false)
         alert('تمت عملية التقاط الصور!');
         return;
       }
+      setIsWebcamActive(true)
 
       const imageSrc = capture();
       if (imageSrc) {
@@ -144,8 +97,12 @@ function PhotoSessionManager() {
           await saveSession(updatedSession);
         }
       }
+   setIsWebcamActive(false);
 
-    }, interval);
+   setTimeout(() => {
+     setIsWebcamActive(true);
+   }, 5000);
+    }, interval * 1000 * 60 );
 
     setIntervalId(id);
   };
@@ -157,6 +114,7 @@ function PhotoSessionManager() {
 
     setSessionInProgress(false);
     setTimeLeft(null);
+    setIsWebcamActive(false);
     alert('تم انهاء الجلسة.');
   };
 
@@ -237,12 +195,12 @@ function PhotoSessionManager() {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="interval">الفاصل الزمني (بالثواني)</Label>
+                <Label htmlFor="interval">الفاصل الزمني (بالدقائق)</Label>
                 <Input
                   id="interval"
                   type="number"
-                  value={interval / 1000} // converting ms to seconds
-                  onChange={(e) => setIntervalValue(Number(e.target.value) * 1000)} // converting seconds to ms
+                  value={interval}
+                  onChange={(e) => setIntervalValue(Number(e.target.value))} 
                   min="1"
                   disabled={sessionInProgress}
                 />
@@ -258,17 +216,17 @@ function PhotoSessionManager() {
                 <Button onClick={handleStop} className="mt-2 text-red-600">إيقاف الجلسة</Button>
               </div>
             )}
-            <div id="video-container" className="m-2 max-h-52">
-              <Webcam
+            {isWebcamActive &&
+            (<div id="video-container" className="m-2">
+               <Webcam
+              className="ml-auto mr-auto"
                 screenshotFormat="image/jpeg"
                 videoConstraints={videoConstraints}
                 audio={false}
-                height={500}
-                width={500}
                 ref={webcamRef}
                 mirrored={true}
               />
-            </div>
+            </div>)}
           </TabsContent>
 
           <TabsContent value="existing-sessions">
